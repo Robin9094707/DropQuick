@@ -117,6 +117,12 @@ final class DiscoveryRegressionTests:XCTestCase {
         XCTAssertFalse(BluetoothDiscovery.isQuickShareHint(Data([0xfc,0x12,0x8e])))
         XCTAssertFalse(BluetoothDiscovery.isQuickShareHint(Data([0xfc,0x12,0x8e,0xe0,66])))
     }
+    func testBuiltAppDeclaresBluetoothAndExactBonjourService() {
+        let info=Bundle.main.infoDictionary ?? [:]
+        XCTAssertFalse((info["NSBluetoothAlwaysUsageDescription"] as? String ?? "").isEmpty)
+        XCTAssertFalse((info["NSLocalNetworkUsageDescription"] as? String ?? "").isEmpty)
+        XCTAssertTrue((info["NSBonjourServices"] as? [String] ?? []).contains("_FC9F5ED42C8A._tcp"))
+    }
     func testBlockedLocalNetworkShowsRecoveryInstruction() {
         let message=NearbyConnectionManager.networkIssue(.dns(-65570))
         XCTAssertTrue(message.contains("Lokales Netzwerk"))

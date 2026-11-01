@@ -35,7 +35,7 @@ targets:
         NSBluetoothAlwaysUsageDescription: DropQuick erkennt Quick-Share-Sendesignale in deiner Nähe per Bluetooth. Dateien werden über dein lokales WLAN übertragen.
         UILaunchScreen: {}
         NSLocalNetworkUsageDescription: DropQuick findet Quick-Share-Geräte und überträgt Dateien direkt in deinem lokalen Netzwerk.
-        NSBonjourServices: ['_FC9F5ED42C8A._tcp.']
+        NSBonjourServices: ['_FC9F5ED42C8A._tcp']
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
         UIFileSharingEnabled: true
@@ -70,7 +70,7 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSBluetoothAlwaysUsageDescription: DropQuick erkennt Quick-Share-Sendesignale in deiner Nähe per Bluetooth. Dateien werden über dein lokales WLAN übertragen.
         NSLocalNetworkUsageDescription: DropQuick findet Quick-Share-Geräte im lokalen Netzwerk.
-        NSBonjourServices: ['_FC9F5ED42C8A._tcp.']
+        NSBonjourServices: ['_FC9F5ED42C8A._tcp']
         NSExtension:
           NSExtensionPointIdentifier: com.apple.share-services
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
