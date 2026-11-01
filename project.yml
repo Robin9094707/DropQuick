@@ -7,8 +7,8 @@ settings:
   base:
     SWIFT_VERSION: '5.0'
     TARGETED_DEVICE_FAMILY: '1,2'
-    MARKETING_VERSION: '1.0.0'
-    CURRENT_PROJECT_VERSION: '1'
+    MARKETING_VERSION: '1.0.1'
+    CURRENT_PROJECT_VERSION: '2'
     CODE_SIGN_STYLE: Automatic
     SWIFT_STRICT_CONCURRENCY: minimal
 packages:
@@ -30,6 +30,9 @@ targets:
       path: Config/App-Info.plist
       properties:
         CFBundleDisplayName: DropQuick
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSBluetoothAlwaysUsageDescription: DropQuick erkennt Quick-Share-Sendesignale in deiner Nähe per Bluetooth. Dateien werden über dein lokales WLAN übertragen.
         UILaunchScreen: {}
         NSLocalNetworkUsageDescription: DropQuick findet Quick-Share-Geräte und überträgt Dateien direkt in deinem lokalen Netzwerk.
         NSBonjourServices: ['_FC9F5ED42C8A._tcp.']
@@ -63,6 +66,9 @@ targets:
       path: Config/Share-Info.plist
       properties:
         CFBundleDisplayName: DropQuick
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSBluetoothAlwaysUsageDescription: DropQuick erkennt Quick-Share-Sendesignale in deiner Nähe per Bluetooth. Dateien werden über dein lokales WLAN übertragen.
         NSLocalNetworkUsageDescription: DropQuick findet Quick-Share-Geräte im lokalen Netzwerk.
         NSBonjourServices: ['_FC9F5ED42C8A._tcp.']
         NSExtension:

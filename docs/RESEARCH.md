@@ -19,3 +19,6 @@ Replaced macOS Host/AppKit/downloads with app naming and sandboxed storage. Adde
 ## Why the Windows fallback is explicit
 
 Windows native Nearby Sharing requires a working CDP discovery, authentication, session/channel and NearShare transfer implementation. Sharing a Bonjour name or HTTP server does not implement CDP. DropQuick therefore says "Browserfreigabe" for this path. The browser portal is useful without a Windows installation, but does not satisfy native Windows Nearby Sharing discovery.
+
+
+1.0.1 references: Apple TN3179 documents NWBrowser waiting with DNS -65570 and explains that the simulator does not implement iOS Local Network privacy. Chromium Fast Initiation constants identify FE2C with service-data model ID FC128E plus metadata: https://github.com/chromium/chromium/blob/9269d4ed0dde3bcd3837f75a50a2944674555186/chrome/browser/nearby_sharing/fast_initiation/constants.h . BLE hints do not supply a TCP endpoint. The app does not advertise custom BLE data.

@@ -109,3 +109,31 @@ private final class LoopbackDelegate:InboundNearbyConnectionDelegate,OutboundNea
     func outboundConnection(connection:OutboundNearbyConnection,failedWithError:Error) {XCTFail("Encrypted transfer failed: \(failedWithError)")}
     func outboundConnectionTransferFinished(connection:OutboundNearbyConnection) {expectation.fulfill()}
 }
+
+final class DiscoveryRegressionTests:XCTestCase {
+    func testQuickShareBeaconDoesNotMatchOrdinaryFastPairAccessories() {
+        XCTAssertTrue(BluetoothDiscovery.isQuickShareHint(Data([0xfc,0x12,0x8e,0,66])))
+        XCTAssertFalse(BluetoothDiscovery.isQuickShareHint(Data([1,2,3,0,66])))
+        XCTAssertFalse(BluetoothDiscovery.isQuickShareHint(Data([0xfc,0x12,0x8e])))
+        XCTAssertFalse(BluetoothDiscovery.isQuickShareHint(Data([0xfc,0x12,0x8e,0xe0,66])))
+    }
+    func testBlockedLocalNetworkShowsRecoveryInstruction() {
+        let message=NearbyConnectionManager.networkIssue(.dns(-65570))
+        XCTAssertTrue(message.contains("Lokales Netzwerk"))
+        XCTAssertTrue(message.contains("Einstellungen"))
+    }
+    func testVisibilityWaitsForBonjourRegistrationAndCanRestart() {
+        let manager=NearbyConnectionManager.shared
+        for _ in 0..<2 {
+            let registered=expectation(description:"Bonjour service registered")
+            var fulfilled=false
+            manager.visibilityStatusHandler = {visible,_ in
+                if visible && !fulfilled {fulfilled=true;registered.fulfill()}
+            }
+            manager.becomeVisible()
+            wait(for:[registered],timeout:15)
+            manager.becomeHidden()
+        }
+        manager.visibilityStatusHandler=nil
+    }
+}

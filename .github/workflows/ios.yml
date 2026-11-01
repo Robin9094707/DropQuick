@@ -55,11 +55,11 @@ jobs:
           mkdir -p build/package/Payload
           cp -R build/device/Build/Products/Release-iphoneos/DropQuick.app build/package/Payload/
           cd build/package
-          zip -qr ../DropQuick-1.0.0-unsigned.ipa Payload
+          zip -qr ../DropQuick-1.0.1-unsigned.ipa Payload
       - uses: actions/upload-artifact@v4
         with:
-          name: DropQuick-1.0.0-unsigned-IPA
-          path: build/DropQuick-1.0.0-unsigned.ipa
+          name: DropQuick-1.0.1-unsigned-IPA
+          path: build/DropQuick-1.0.1-unsigned.ipa
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -71,6 +71,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           RELEASE_TAG="${GITHUB_REF_NAME}"
-          if [ "$GITHUB_REF_TYPE" != "tag" ]; then RELEASE_TAG="v1.0.0-build.${GITHUB_RUN_NUMBER}"; fi
-          gh release create "$RELEASE_TAG" build/DropQuick-1.0.0-unsigned.ipa --target "$GITHUB_SHA" --title "DropQuick 1.0.0 (build ${GITHUB_RUN_NUMBER})" --prerelease --notes-file docs/RELEASE.md
+          if [ "$GITHUB_REF_TYPE" != "tag" ]; then RELEASE_TAG="v1.0.1-build.${GITHUB_RUN_NUMBER}"; fi
+          gh release create "$RELEASE_TAG" build/DropQuick-1.0.1-unsigned.ipa --target "$GITHUB_SHA" --title "DropQuick 1.0.1 (build ${GITHUB_RUN_NUMBER})" --prerelease --notes-file docs/RELEASE.md
           if [ -f build/DropQuick-iPhone.png ]; then gh release upload "$RELEASE_TAG" build/DropQuick-iPhone.png; fi

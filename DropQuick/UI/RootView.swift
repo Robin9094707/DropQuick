@@ -54,6 +54,7 @@ struct ShareHome:View {
                         }
                         Text("Einmal wählen.\nEinfach teilen.").font(.system(size:39,weight:.bold,design:.rounded)).tracking(-1)
                         Text("Deine Dateien. Direkt zum anderen Gerät.").foregroundStyle(.secondary)
+                        ConnectionDiagnostics()
                         Tile {
                             HStack {Label("Deine Auswahl",systemImage:"square.stack.3d.up").font(.headline);Spacer();Text("\(center.files.count)").monospacedDigit().foregroundStyle(.secondary)}
                             if center.files.isEmpty {Text("Fotos, Videos, Dokumente oder eine kurze Nachricht.").foregroundStyle(.secondary)}
@@ -80,7 +81,7 @@ struct ShareHome:View {
                                 Button("Abbrechen",role:.destructive) {center.cancel()}.buttonStyle(.glass)
                             }
                         }
-                        HStack {Text("Quick Share").font(.title2.bold());Spacer();ProgressView().controlSize(.small)}
+                        HStack {Text("Quick Share").font(.title2.bold());Spacer();Button {center.retryDiscovery()} label:{Image(systemName:"arrow.clockwise")}.buttonStyle(.glass).accessibilityLabel("Geräte erneut suchen")}
                         if center.devices.isEmpty {
                             Tile {
                                 Image(systemName:"dot.radiowaves.left.and.right").font(.largeTitle).foregroundStyle(.green)
@@ -147,11 +148,17 @@ struct ReceiveView:View {
     var body:some View {
         NavigationStack {Canvas {ScrollView {VStack(spacing:24) {
             Image(systemName:center.visibleUntil == nil ? "shield.lefthalf.filled":"dot.radiowaves.left.and.right").font(.system(size:84)).foregroundStyle(.green).padding(.top,36).symbolEffect(.pulse,isActive:center.visibleUntil != nil)
-            Text(center.visibleUntil == nil ? "Du entscheidest,\nwer dich sieht.":"Jetzt sichtbar.").font(.system(size:36,weight:.bold,design:.rounded)).multilineTextAlignment(.center)
+            Text(center.visibleUntil != nil ? "Jetzt sichtbar.":(center.visibilityRequested ? "Sichtbarkeit wird\ngeprüft…":"Du entscheidest,\nwer dich sieht.")).font(.system(size:36,weight:.bold,design:.rounded)).multilineTextAlignment(.center)
             Text(DeviceIdentity.name).foregroundStyle(.secondary)
+            ConnectionDiagnostics()
             Tile {
-                if let until=center.visibleUntil {
-                    HStack {Text("Für alle im WLAN").font(.headline);Spacer();Text(until,style:.timer).monospacedDigit()}
+                if center.visibilityRequested {
+                    if let until=center.visibleUntil {
+                        HStack {Text("Im WLAN angemeldet").font(.headline);Spacer();Text(until,style:.timer).monospacedDigit()}
+                    } else {
+                        Text(center.visibilityStatus).font(.headline)
+                        Button("Sichtbarkeit erneut versuchen") {center.retryDiscovery()}.buttonStyle(.glass)
+                    }
                     Button("Sichtbarkeit beenden",role:.destructive) {center.hide()}.buttonStyle(.glass)
                 } else {
                     Text("Empfangen mit Quick Share").font(.headline)
@@ -258,13 +265,13 @@ struct SettingsView:View {
             }
             Section("Datenschutz & Grenzen") {
                 Text("Kein Konto, keine Cloud, keine Analyse. Verlauf und Dateikopien bleiben auf diesem iPhone. Verlaufseinträge löschen entfernt nur den Eintrag. Dateien im App-Gruppencontainer werden bei Deinstallation entfernt.")
-                Text("Quick Share basiert auf einem inoffiziellen offenen Protokoll. Die Kompatibilität mit deinem Samsung/Android-Gerät muss praktisch getestet werden. Kein Bluetooth-Dateitransport, keine Wi-Fi-Direct-Verbindung, keine native Windows-Umgebungsfreigabe. App für Empfang und Übertragung geöffnet lassen.")
+                Text("Quick Share basiert auf einem inoffiziellen offenen Protokoll. Die Kompatibilität mit deinem Samsung/Android-Gerät muss praktisch getestet werden. Bluetooth dient nur zum Erkennen von Quick-Share-Sendesignalen. Kein Bluetooth-Dateitransport, keine Wi-Fi-Direct-Verbindung, keine native Windows-Umgebungsfreigabe. App für Empfang und Übertragung geöffnet lassen.")
                 Text("Die Teilen-Erweiterung kann direkt an Quick-Share-Geräte senden und legt die Dateien zusätzlich in der Ausgangsbox ab. Bei Sideloading müssen App und Erweiterung dieselbe App Group behalten.")
             }
             Section("Open Source") {
                 Link("DropQuick auf GitHub",destination:URL(string:"https://github.com/Robin9094707/DropQuick")!)
                 Link("Quick-Share-Basis: NearDrop · Grishka · Unlicense",destination:URL(string:"https://github.com/grishka/NearDrop")!)
-                Text("Version 1.0.0 · iOS 26+").foregroundStyle(.secondary)
+                Text("Version 1.0.1 · iOS 26+").foregroundStyle(.secondary)
             }
         }.navigationTitle("Einstellungen")}
     }
@@ -291,4 +298,28 @@ struct ActivityView:UIViewControllerRepresentable {
     let items:[URL]
     func makeUIViewController(context:Context)->UIActivityViewController {UIActivityViewController(activityItems:items,applicationActivities:nil)}
     func updateUIViewController(_ controller:UIActivityViewController,context:Context) {}
+}
+
+struct ConnectionDiagnostics:View {
+    @EnvironmentObject var center:TransferCenter
+    @Environment(\.openURL) private var openURL
+    @State private var expanded=false
+    var body:some View {
+        Tile {
+            Text(center.discoveryStatus).font(.subheadline).foregroundStyle(.secondary)
+            DisclosureGroup("Berechtigungen & Verbindung",isExpanded:$expanded) {
+                VStack(alignment:.leading,spacing:12) {
+                    Label(center.networkAvailable ? "WLAN verbunden":"Kein WLAN erkannt – beide Geräte mit demselben WLAN verbinden",systemImage:"wifi")
+                    Label(center.bluetoothStatus,systemImage:"antenna.radiowaves.left.and.right")
+                    Label(center.visibilityStatus,systemImage:"eye")
+                    if let date=center.lastBluetoothHint {
+                        Text("Quick-Share-Sendesignal erkannt: \(date.formatted(date:.omitted,time:.shortened))")
+                    }
+                    Text("Ein Bluetooth-Signal allein ist noch kein empfangsbereites Gerät. Android: Quick Share → Empfangen öffnen. Falls nichts erscheint, QR-Verbindung verwenden.").foregroundStyle(.secondary)
+                    Button("iOS-Berechtigungen öffnen") {if let url=URL(string:UIApplication.openSettingsURLString) {openURL(url)}}.buttonStyle(.glass)
+                }.font(.caption).padding(.top,12)
+            }
+            Button {center.retryDiscovery()} label:{Label("Erneut suchen",systemImage:"arrow.clockwise")}.buttonStyle(.glass)
+        }
+    }
 }

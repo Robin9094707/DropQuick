@@ -26,7 +26,7 @@ Guest Wi-Fi client isolation, VPNs, firewalls and Android firmware can affect di
 
 ## Download an IPA
 
-[GitHub Actions](https://github.com/Robin9094707/DropQuick/actions/workflows/ios.yml) builds and tests the app on macOS/Xcode 26 and uploads `DropQuick-1.0.0-unsigned-IPA`. Open a successful run → Artifacts. Version tags also attach the IPA to a GitHub Release.
+[GitHub Actions](https://github.com/Robin9094707/DropQuick/actions/workflows/ios.yml) builds and tests the app on macOS/Xcode 26 and uploads `DropQuick-1.0.1-unsigned-IPA`. Open a successful run → Artifacts. Version tags also attach the IPA to a GitHub Release.
 
 The IPA is **unsigned**, for re-signing/sideloading, not direct installation by tapping it. A device-valid signature/provisioning profile is required. Preserve the Share Extension and assign the **same App Group entitlement** to both targets; otherwise share-extension imports/history cannot reach the main app; direct sending from the extension still works. App Groups require appropriate Apple provisioning. In-app file/photo selection still works if the re-signer cannot provision App Groups. No Apple certificate or account credentials are included in the repository.
 
@@ -49,3 +49,10 @@ CI runs XCTest mini tests for endpoint metadata, malformed packets, path travers
 Files and history remain in the app / shared container. History is capped at 500 entries. Removing a history entry leaves retained files intact; uninstalling removes app-local data. Browser access expires after ten minutes or when the app goes to background. Never expose the portal to the Internet. No telemetry or remote backend.
 
 See [research and platform constraints](docs/RESEARCH.md) and [third-party notices](THIRD_PARTY_NOTICES.md).
+
+
+### 1.0.1 discovery fix
+
+Real Bluetooth central scanning now requests permission and listens for Quick Share Fast Initiation beacons (FE2C / FC128E). A beacon triggers fresh Bonjour discovery and is never shown as a file-transfer-ready device on its own. Bluetooth is paused in background. No Bluetooth advertising / file transport is claimed.
+
+Bonjour registration now uses NWListener.service, reports denied/waiting states, supports manual retries and resumes searches after returning to the app. The receiver UI only says visible after service registration succeeds; registration does not prove a particular Android phone has discovered it. Expand “Berechtigungen & Verbindung” to see Wi-Fi, Bluetooth, discovery and advertisement status and open the iOS permission settings.

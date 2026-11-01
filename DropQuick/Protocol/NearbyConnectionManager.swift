@@ -185,12 +185,14 @@ public protocol ShareExtensionDelegate:AnyObject{
 	func transferFinished()
 }
 
-public class NearbyConnectionManager : NSObject, NetServiceDelegate, InboundNearbyConnectionDelegate, OutboundNearbyConnectionDelegate{
+public class NearbyConnectionManager : NSObject, InboundNearbyConnectionDelegate, OutboundNearbyConnectionDelegate{
 	
 	private var tcpListener:NWListener?
 	public var statusHandler:((String)->Void)?
 	public let endpointID:[UInt8]=generateEndpointID()
-	private var mdnsService:NetService?
+	public var discoveryStatusHandler:((String)->Void)?
+    public var visibilityStatusHandler:((Bool,String)->Void)?
+    private var isRegistered=false
 	private var activeConnections:[String:InboundNearbyConnection]=[:]
 	private var foundServices:[String:FoundServiceInfo]=[:]
 	private var shareExtensionDelegates:[ShareExtensionDelegate]=[]
@@ -213,31 +215,55 @@ public class NearbyConnectionManager : NSObject, NetServiceDelegate, InboundNear
 		super.init()
 	}
 	
-	public func becomeVisible(){
-		guard tcpListener == nil else {return}
-		do { tcpListener=try NWListener(using: .tcp) } catch { statusHandler?(error.localizedDescription); return }
-		startTCPListener()
-	}
-	
-	private func startTCPListener(){
-		tcpListener?.stateUpdateHandler={(state:NWListener.State) in
-			if case .ready = state {
-				self.initMDNS()
-			} else if case .failed(let error) = state {
-				self.statusHandler?(error.localizedDescription)
-			}
-		}
-		tcpListener?.newConnectionHandler={(connection:NWConnection) in
-			guard self.activeConnections.count < 4 else {connection.cancel(); return}
-			let id=UUID().uuidString
-			let conn=InboundNearbyConnection(connection: connection, id: id)
-			self.activeConnections[id]=conn
-			conn.delegate=self
-			conn.start()
-		}
-		tcpListener?.start(queue: .main)
-	}
-	
+    static func networkIssue(_ error:NWError)->String {
+        if case .dns(let code)=error, code == -65570 {
+            return "Lokales Netzwerk ist gesperrt. Öffne iOS-Einstellungen → Datenschutz & Sicherheit → Lokales Netzwerk und erlaube DropQuick."
+        }
+        return "Netzwerk wartet: \(error.localizedDescription). Prüfe WLAN und VPN und starte die Suche erneut."
+    }
+    public func becomeVisible(){
+        guard tcpListener == nil else {return}
+        do {
+            let parameters=NWParameters.tcp
+            parameters.includePeerToPeer=true
+            let listener=try NWListener(using:parameters)
+            tcpListener=listener
+            let bytes:[UInt8]=[0x23]+endpointID+[0xfc,0x9f,0x5e,0,0]
+            let info=EndpointInfo(name:DeviceIdentity.name,deviceType:.phone)
+            let txt=NetService.data(fromTXTRecord:["n":Data(info.serialize().urlSafeBase64EncodedString().utf8)])
+            listener.service=NWListener.Service(name:Data(bytes).urlSafeBase64EncodedString(),type:"_FC9F5ED42C8A._tcp",domain:"local.",txtRecord:txt)
+            visibilityStatusHandler?(false,"Sichtbarkeit wird im Netzwerk angemeldet…")
+            listener.serviceRegistrationUpdateHandler = { [weak self,weak listener] change in
+                guard let self=self,let listener=listener,self.tcpListener === listener else {return}
+                switch change {
+                case .add(_):
+                    self.isRegistered=true
+                    self.visibilityStatusHandler?(true,"Im lokalen Netzwerk sichtbar")
+                case .remove(_):
+                    self.isRegistered=false
+                    self.visibilityStatusHandler?(false,"Netzwerk-Ankündigung unterbrochen – suche erneut")
+                @unknown default: break
+                }
+            }
+            listener.stateUpdateHandler = { [weak self,weak listener] state in
+                guard let self=self,let listener=listener,self.tcpListener === listener else {return}
+                switch state {
+                case .waiting(let error):self.visibilityStatusHandler?(false,Self.networkIssue(error))
+                case .failed(let error):
+                    self.visibilityStatusHandler?(false,Self.networkIssue(error))
+                    self.tcpListener=nil;listener.cancel()
+                default:break
+                }
+            }
+            listener.newConnectionHandler = { [weak self] connection in
+                guard let self=self,self.activeConnections.count<4 else {connection.cancel();return}
+                let conn=InboundNearbyConnection(connection:connection,id:UUID().uuidString)
+                self.activeConnections[conn.id]=conn;conn.delegate=self;conn.start()
+            }
+            listener.start(queue:.main)
+        } catch {visibilityStatusHandler?(false,"Sichtbarkeit fehlgeschlagen: \(error.localizedDescription)")}
+    }
+
 	private static func generateEndpointID()->[UInt8]{
 		var id:[UInt8]=[]
 		let alphabet="0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ".compactMap {UInt8($0.asciiValue!)}
@@ -245,25 +271,6 @@ public class NearbyConnectionManager : NSObject, NetServiceDelegate, InboundNear
 			id.append(alphabet[Int.random(in: 0..<alphabet.count)])
 		}
 		return id
-	}
-	
-	private func initMDNS(){
-		let nameBytes:[UInt8]=[
-			0x23, // PCP
-			endpointID[0], endpointID[1], endpointID[2], endpointID[3],
-			0xFC, 0x9F, 0x5E, // Service ID hash
-			0, 0
-		]
-		let name=Data(nameBytes).urlSafeBase64EncodedString()
-		let endpointInfo=EndpointInfo(name: DeviceIdentity.name, deviceType: .phone)
-		
-		let port:Int32=Int32(tcpListener!.port!.rawValue)
-		mdnsService=NetService(domain: "", type: "_FC9F5ED42C8A._tcp.", name: name, port: port)
-		mdnsService?.delegate=self
-		mdnsService?.setTXTRecord(NetService.data(fromTXTRecord: [
-			"n": endpointInfo.serialize().urlSafeBase64EncodedString().data(using: .utf8)!
-		]))
-		mdnsService?.publish()
 	}
 	
 	func obtainUserConsent(for transfer: TransferMetadata, from device: RemoteDeviceInfo, connection: InboundNearbyConnection) {
@@ -282,8 +289,9 @@ public class NearbyConnectionManager : NSObject, NetServiceDelegate, InboundNear
         NearbyConnection.dispatchQueue.async {for connection in connections {connection.lastError=NearbyError.canceled(reason:.userCanceled);connection.disconnect()}}
     }
     public func becomeHidden(){
-        mdnsService?.stop(); mdnsService=nil
-        tcpListener?.cancel(); tcpListener=nil
+        let listener=tcpListener;tcpListener=nil;listener?.cancel()
+        isRegistered=false
+        visibilityStatusHandler?(false,"Nicht sichtbar")
     }
     func receivedFile(url:URL, connection:InboundNearbyConnection) {
         DispatchQueue.main.async {self.mainAppDelegate?.receivedFile(url:url, transferID:connection.id)}
@@ -296,37 +304,42 @@ public class NearbyConnectionManager : NSObject, NetServiceDelegate, InboundNear
 		conn.submitUserConsent(accepted: accept)
 	}
 	
-	public func startDeviceDiscovery(){
-		if discoveryRefCount==0{
-			foundServices.removeAll()
-			if browser==nil{
-				browser=NWBrowser(for: .bonjourWithTXTRecord(type: "_FC9F5ED42C8A._tcp.", domain: nil), using: .tcp)
-				browser?.stateUpdateHandler={state in
-                    if case .failed(let error)=state {self.statusHandler?(error.localizedDescription)}
-                }
-                browser?.browseResultsChangedHandler={newResults, changes in
-					for change in changes{
-						switch change{
-						case let .added(res):
-							self.maybeAddFoundDevice(service: res)
-						case let .changed(_, res, _):
-							self.maybeAddFoundDevice(service: res)
-						case let .removed(res):
-							self.maybeRemoveFoundDevice(service: res)
-						default:
-							break
-						}
-					}
-				}
-			}
-			browser?.start(queue: .main)
-		}
-		discoveryRefCount+=1
-	}
-	
+    public func startDeviceDiscovery(){
+        discoveryRefCount+=1
+        if discoveryRefCount==1 {restartDeviceDiscovery()}
+    }
+    public func restartDeviceDiscovery(){
+        guard discoveryRefCount>0 else {return}
+        let previous=browser;browser=nil;previous?.cancel()
+        let ids=Array(foundServices.keys);foundServices.removeAll()
+        for id in ids {for delegate in shareExtensionDelegates {delegate.removeDevice(id:id)}}
+        discoveryStatusHandler?("Netzwerksuche wird gestartet…")
+        let parameters=NWParameters.tcp;parameters.includePeerToPeer=true
+        let next=NWBrowser(for:.bonjourWithTXTRecord(type:"_FC9F5ED42C8A._tcp",domain:"local."),using:parameters)
+        browser=next
+        next.stateUpdateHandler = { [weak self,weak next] state in
+            guard let self=self,let next=next,self.browser === next else {return}
+            switch state {
+            case .ready:self.discoveryStatusHandler?("Netzwerksuche aktiv – Android: Quick Share → Empfangen")
+            case .waiting(let error),.failed(let error):self.discoveryStatusHandler?(Self.networkIssue(error))
+            default:break
+            }
+        }
+        next.browseResultsChangedHandler = { [weak self,weak next] results,_ in
+            guard let self=self,let next=next,self.browser === next else {return}
+            let liveIDs=Set(results.compactMap{self.endpointID(for:$0)})
+            for id in Array(self.foundServices.keys) where !liveIDs.contains(id) {
+                self.foundServices.removeValue(forKey:id)
+                for delegate in self.shareExtensionDelegates {delegate.removeDevice(id:id)}
+            }
+            for result in results {self.maybeAddFoundDevice(service:result)}
+        }
+        next.start(queue:.main)
+    }
+
 	public func stopDeviceDiscovery(){
+		guard discoveryRefCount>0 else {return}
 		discoveryRefCount-=1
-		assert(discoveryRefCount>=0)
 		if discoveryRefCount==0{
 			browser?.cancel()
 			browser=nil

@@ -20,6 +20,14 @@ final class TransferCenter:NSObject,ObservableObject,MainAppDelegate,ShareExtens
     @Published var error:String?
     @Published var qrURL:String?
     @Published var networkAvailable=false
+    @Published var discoveryStatus="Netzwerksuche noch nicht gestartet"
+    @Published var bluetoothStatus="Bluetooth noch nicht gestartet"
+    @Published var visibilityStatus="Nicht sichtbar"
+    @Published var visibilityRequested=false
+    @Published var lastBluetoothHint:Date?
+    private let bluetooth=BluetoothDiscovery()
+    private var requestedUntil:Date?
+    private var suspended=false
     @Published var incomingProgressValue:Double=0
     @Published var portalURL:String?
     private var started=false
@@ -37,7 +45,22 @@ final class TransferCenter:NSObject,ObservableObject,MainAppDelegate,ShareExtens
         started=true
         manager.mainAppDelegate=self
         manager.addShareExtensionDelegate(self)
-        manager.statusHandler = { [weak self] message in DispatchQueue.main.async {self?.error=message;self?.hide()}}
+        manager.statusHandler = { [weak self] message in DispatchQueue.main.async {self?.error=message}}
+        manager.discoveryStatusHandler = { [weak self] message in self?.discoveryStatus=message }
+        manager.visibilityStatusHandler = { [weak self] visible,message in
+            guard let self=self else {return}
+            self.visibilityStatus=message
+            self.visibleUntil=visible ? self.requestedUntil:nil
+        }
+        bluetooth.onStatus = { [weak self] message in self?.bluetoothStatus=message }
+        bluetooth.onSharingHint = { [weak self] in
+            guard let self=self else {return}
+            self.lastBluetoothHint=Date()
+            // A hint only: never list an unnamed BLE peripheral as a send target.
+            self.manager.restartDeviceDiscovery()
+            if self.visibilityRequested && self.visibleUntil == nil {self.manager.becomeHidden();self.manager.becomeVisible()}
+        }
+        bluetooth.start()
         manager.startDeviceDiscovery()
         monitor.pathUpdateHandler = { [weak self] path in
             DispatchQueue.main.async {self?.networkAvailable=path.status == .satisfied && (path.usesInterfaceType(.wifi) || path.usesInterfaceType(.wiredEthernet))}
@@ -57,8 +80,19 @@ final class TransferCenter:NSObject,ObservableObject,MainAppDelegate,ShareExtens
         portal.onError = { [weak self] message in DispatchQueue.main.async {self?.error=message}}
         importStaged()
     }
-    func activate() {if !busy {history=HistoryStore.read()}; start(); importStaged()}
+    func activate() {
+        if !busy {history=HistoryStore.read()}
+        let resume=suspended
+        start();importStaged();bluetooth.start()
+        if resume {manager.restartDeviceDiscovery()}
+        suspended=false
+    }
+    func retryDiscovery() {
+        start();bluetooth.start();manager.restartDeviceDiscovery()
+        if visibilityRequested {manager.becomeHidden();manager.becomeVisible()}
+    }
     func background() {
+        suspended=true;bluetooth.stop()
         hide()
         manager.cancelIncomingTransfers()
         stopPortal()
@@ -66,12 +100,12 @@ final class TransferCenter:NSObject,ObservableObject,MainAppDelegate,ShareExtens
         if let offer=offer {respond(to:offer,accept:false)}
     }
     func showForTenMinutes() {
-        visibleUntil=Date().addingTimeInterval(600)
-        manager.becomeVisible()
+        visibilityRequested=true;requestedUntil=Date().addingTimeInterval(600)
+        bluetooth.start();manager.becomeVisible()
         timer?.invalidate()
         timer=Timer.scheduledTimer(withTimeInterval:600,repeats:false){ [weak self] _ in self?.hide() }
     }
-    func hide() {timer?.invalidate(); timer=nil; visibleUntil=nil; manager.becomeHidden()}
+    func hide() {timer?.invalidate();timer=nil;visibleUntil=nil;requestedUntil=nil;visibilityRequested=false;manager.becomeHidden()}
     func makeQR() {qrURL="https://quickshare.google/qrcode#key="+manager.generateQrCodeKey()}
     func clearQR() {qrURL=nil; manager.clearQrCodeKey()}
     func add(urls:[URL]) {

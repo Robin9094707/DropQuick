@@ -78,15 +78,20 @@ private final class ImportState:NSObject,ObservableObject,ShareExtensionDelegate
     @Published var qr:String?
     var urls:[URL]=[]
     private var discovering=false
+    private let bluetooth=BluetoothDiscovery()
     private var target:String?
     private var recordID:UUID?
     private var timeout:Timer?
     private var manager:NearbyConnectionManager {NearbyConnectionManager.shared}
     func beginDiscovery() {
         guard !discovering else {return}
-        discovering=true;manager.addShareExtensionDelegate(self);manager.startDeviceDiscovery()
+        discovering=true
+        manager.discoveryStatusHandler = { [weak self] status in if self?.busy == false {self?.message=status} }
+        bluetooth.onSharingHint = { [weak self] in self?.manager.restartDeviceDiscovery() }
+        manager.addShareExtensionDelegate(self);manager.startDeviceDiscovery();bluetooth.start()
     }
     func stop() {
+        bluetooth.stop()
         if busy, let target=target {manager.cancelOutgoingTransfer(id:target);finish("Abgebrochen")}
         if discovering {manager.stopDeviceDiscovery();manager.removeShareExtensionDelegate(self);discovering=false}
         timeout?.invalidate();manager.clearQrCodeKey()
