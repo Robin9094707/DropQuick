@@ -67,18 +67,21 @@ final class EncryptedLoopbackTests:XCTestCase {
         let delegate=LoopbackDelegate(expectation:done,expected:["Loopback.bin":content,"Empty.txt":Data()])
         let listener=try NWListener(using:.tcp)
         listener.newConnectionHandler = {conn in
+            print("Loopback: TCP receiver connected")
             let receiver=InboundNearbyConnection(connection:conn,id:"test-incoming")
             delegate.receiver=receiver;receiver.delegate=delegate;receiver.start()
         }
         listener.stateUpdateHandler = {state in
             if case .ready=state, let port=listener.port {
+                print("Loopback: listener ready")
                 let conn=NWConnection(host:"127.0.0.1",port:port,using:.tcp)
                 let sender=OutboundNearbyConnection(connection:conn,id:"test-outgoing",urlsToSend:[first,empty])
                 delegate.sender=sender;sender.delegate=delegate;sender.start()
             }
         }
         listener.start(queue:.main)
-        wait(for:[done],timeout:30)
+        // Debug P-256 arithmetic and simulator scheduling vary significantly on hosted runners.
+        wait(for:[done],timeout:90)
         listener.cancel()
         delegate.sender=nil;delegate.receiver=nil
     }
@@ -92,22 +95,24 @@ private final class LoopbackDelegate:InboundNearbyConnectionDelegate,OutboundNea
     var receiver:InboundNearbyConnection?
     init(expectation:XCTestExpectation,expected:[String:Data]) {self.expectation=expectation;self.expected=expected}
     func obtainUserConsent(for transfer:TransferMetadata,from device:RemoteDeviceInfo,connection:InboundNearbyConnection) {
+        print("Loopback: consent requested; handshake completed")
         XCTAssertEqual(connection.pinCode,sender?.pinCode)
         XCTAssertEqual(transfer.files.count,2)
         connection.submitUserConsent(accepted:true)
     }
     func receivedFile(url:URL,connection:InboundNearbyConnection) {
+        print("Loopback: received fixture \(url.lastPathComponent)")
         XCTAssertEqual(try? Data(contentsOf:url),expected[url.lastPathComponent])
         try? FileManager.default.removeItem(at:url)
         expectation.fulfill()
     }
     func incomingProgress(connection:InboundNearbyConnection,progress:Double) {}
     func connectionWasTerminated(connection:InboundNearbyConnection,error:Error?) {XCTAssertNil(error)}
-    func outboundConnectionWasEstablished(connection:OutboundNearbyConnection) {}
-    func outboundConnectionTransferAccepted(connection:OutboundNearbyConnection) {}
+    func outboundConnectionWasEstablished(connection:OutboundNearbyConnection) {print("Loopback: encryption established")}
+    func outboundConnectionTransferAccepted(connection:OutboundNearbyConnection) {print("Loopback: receiver accepted")}
     func outboundConnection(connection:OutboundNearbyConnection,transferProgress:Double) {}
     func outboundConnection(connection:OutboundNearbyConnection,failedWithError:Error) {XCTFail("Encrypted transfer failed: \(failedWithError)")}
-    func outboundConnectionTransferFinished(connection:OutboundNearbyConnection) {expectation.fulfill()}
+    func outboundConnectionTransferFinished(connection:OutboundNearbyConnection) {print("Loopback: sender finished");expectation.fulfill()}
 }
 
 final class DiscoveryRegressionTests:XCTestCase {
