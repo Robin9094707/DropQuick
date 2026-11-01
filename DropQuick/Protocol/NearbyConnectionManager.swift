@@ -277,7 +277,11 @@ public class NearbyConnectionManager : NSObject, NetServiceDelegate, InboundNear
 		activeConnections.removeValue(forKey: connection.id)
 	}
 	
-	public func becomeHidden(){
+	public func cancelIncomingTransfers(){
+        let connections=Array(activeConnections.values)
+        NearbyConnection.dispatchQueue.async {for connection in connections {connection.lastError=NearbyError.canceled(reason:.userCanceled);connection.disconnect()}}
+    }
+    public func becomeHidden(){
         mdnsService?.stop(); mdnsService=nil
         tcpListener?.cancel(); tcpListener=nil
     }
@@ -297,7 +301,10 @@ public class NearbyConnectionManager : NSObject, NetServiceDelegate, InboundNear
 			foundServices.removeAll()
 			if browser==nil{
 				browser=NWBrowser(for: .bonjourWithTXTRecord(type: "_FC9F5ED42C8A._tcp.", domain: nil), using: .tcp)
-				browser?.browseResultsChangedHandler={newResults, changes in
+				browser?.stateUpdateHandler={state in
+                    if case .failed(let error)=state {self.statusHandler?(error.localizedDescription)}
+                }
+                browser?.browseResultsChangedHandler={newResults, changes in
 					for change in changes{
 						switch change{
 						case let .added(res):
@@ -340,7 +347,7 @@ public class NearbyConnectionManager : NSObject, NetServiceDelegate, InboundNear
 	
 	public func cancelOutgoingTransfer(id:String){
 		guard let transfer=outgoingTransfers[id] else {return}
-		transfer.connection.cancel()
+		NearbyConnection.dispatchQueue.async {transfer.connection.cancel()}
 	}
 	
 	private func endpointID(for service:NWBrowser.Result)->String?{
@@ -349,7 +356,7 @@ public class NearbyConnectionManager : NSObject, NetServiceDelegate, InboundNear
 		guard nameData.count>=10 else {return nil}
 		let pcp=nameData[0]
 		guard pcp==0x23 else {return nil}
-		let endpointID=String(data: nameData.subdata(in: 1..<5), encoding: .ascii)!
+		guard let endpointID=String(data:nameData.subdata(in:1..<5),encoding:.ascii) else {return nil}
 		let serviceIDHash=nameData.subdata(in: 5..<8)
 		guard serviceIDHash==Data([0xFC, 0x9F, 0x5E]) else {return nil}
 		return endpointID
@@ -357,19 +364,16 @@ public class NearbyConnectionManager : NSObject, NetServiceDelegate, InboundNear
 	
 	private func maybeAddFoundDevice(service:NWBrowser.Result){
 		#if DEBUG
-		print("found service \(service)")
 		#endif
 		for interface in service.interfaces{
 			if case .loopback=interface.type{
 				#if DEBUG
-				print("ignoring localhost service")
 				#endif
 				return
 			}
 		}
 		guard let endpointID=endpointID(for: service), endpointID != String(bytes:self.endpointID, encoding:.ascii) else {return}
 		#if DEBUG
-		print("service name is valid, endpoint ID \(endpointID)")
 		#endif
 		var foundService=FoundServiceInfo(service: service)
 		
@@ -385,7 +389,6 @@ public class NearbyConnectionManager : NSObject, NetServiceDelegate, InboundNear
 		
 		if let qrData=endpointInfo.qrCodeData, let _=qrCodeAdvertisingToken{
 #if DEBUG
-			print("Device has QR data: \(qrData.base64EncodedString()), our advertising token is \(qrCodeAdvertisingToken!.base64EncodedString())")
 #endif
 			if qrData==qrCodeAdvertisingToken!{
 				if let deviceInfo=deviceInfo{
@@ -405,7 +408,6 @@ public class NearbyConnectionManager : NSObject, NetServiceDelegate, InboundNear
 					}
 				}catch{
 #if DEBUG
-					print("Error decrypting QR code data of an invisible device: \(error)")
 #endif
 				}
 			}

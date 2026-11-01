@@ -31,10 +31,18 @@ jobs:
       - name: Simulator mini tests
         run: |
           DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for a in d["devices"].values() for x in a if "iPhone" in x["name"]))')
-          xcodebuild test -project DropQuick.xcodeproj -scheme DropQuick -destination "platform=iOS Simulator,id=$DEVICE_ID" -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult CODE_SIGNING_ALLOWED=NO
-          xcrun simctl launch "$DEVICE_ID" eu.simplexsmp.dropquick
+          echo "SIMULATOR_UDID=$DEVICE_ID" >> "$GITHUB_ENV"
+          xcodebuild test -project DropQuick.xcodeproj -scheme DropQuick -destination "platform=iOS Simulator,id=$DEVICE_ID" -parallel-testing-enabled NO -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult CODE_SIGNING_ALLOWED=NO
+      - name: Capture native app preview
+        continue-on-error: true
+        run: |
+          xcrun simctl boot "$SIMULATOR_UDID" || true
+          xcrun simctl bootstatus "$SIMULATOR_UDID" -b
+          xcrun simctl install "$SIMULATOR_UDID" build/simulator/Build/Products/Debug-iphonesimulator/DropQuick.app
+          xcrun simctl terminate "$SIMULATOR_UDID" eu.simplexsmp.dropquick || true
+          xcrun simctl launch "$SIMULATOR_UDID" eu.simplexsmp.dropquick --preview
           sleep 3
-          xcrun simctl io "$DEVICE_ID" screenshot build/DropQuick-iPhone.png
+          xcrun simctl io "$SIMULATOR_UDID" screenshot build/DropQuick-iPhone.png
       - uses: actions/upload-artifact@v4
         with:
           name: DropQuick-iPhone-preview
@@ -64,4 +72,5 @@ jobs:
         run: |
           RELEASE_TAG="${GITHUB_REF_NAME}"
           if [ "$GITHUB_REF_TYPE" != "tag" ]; then RELEASE_TAG="v1.0.0-build.${GITHUB_RUN_NUMBER}"; fi
-          gh release create "$RELEASE_TAG" build/DropQuick-1.0.0-unsigned.ipa build/DropQuick-iPhone.png --target "$GITHUB_SHA" --title "DropQuick 1.0.0 (build ${GITHUB_RUN_NUMBER})" --prerelease --notes-file docs/RELEASE.md
+          gh release create "$RELEASE_TAG" build/DropQuick-1.0.0-unsigned.ipa --target "$GITHUB_SHA" --title "DropQuick 1.0.0 (build ${GITHUB_RUN_NUMBER})" --prerelease --notes-file docs/RELEASE.md
+          if [ -f build/DropQuick-iPhone.png ]; then gh release upload "$RELEASE_TAG" build/DropQuick-iPhone.png; fi

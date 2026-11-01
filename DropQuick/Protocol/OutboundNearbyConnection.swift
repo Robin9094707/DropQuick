@@ -87,7 +87,6 @@ class OutboundNearbyConnection:NearbyConnection{
 	override func processReceivedFrame(frameData: Data) {
 		do{
 			#if DEBUG
-			print("received \(frameData), state is \(currentState)")
 			#endif
 			switch currentState {
 			case .initial:
@@ -112,12 +111,10 @@ class OutboundNearbyConnection:NearbyConnection{
 	
 	override func processTransferSetupFrame(_ frame: Sharing_Nearby_Frame) throws {
 		if frame.hasV1 && frame.v1.hasType, case .cancel = frame.v1.type {
-			print("Transfer canceled")
 			try sendDisconnectionAndDisconnect()
 			delegate?.outboundConnection(connection: self, failedWithError: NearbyError.canceled(reason: .userCanceled))
 			return
 		}
-		print(frame)
 		switch currentState{
 		case .sentPairedKeyEncryption:
 			try processPairedKeyEncryption(frame: frame)
@@ -231,7 +228,6 @@ class OutboundNearbyConnection:NearbyConnection{
 	
 	private func processConnectionResponse(frame:Location_Nearby_Connections_OfflineFrame) throws{
 		#if DEBUG
-		print("connection response: \(frame)")
 		#endif
 		guard frame.version == .v1 else {throw NearbyError.protocolError("Unexpected offline frame version \(frame.version)")}
 		guard frame.v1.type == .connectionResponse else {throw NearbyError.protocolError("Unexpected frame type \(frame.v1.type)")}
@@ -311,7 +307,6 @@ class OutboundNearbyConnection:NearbyConnection{
 			}
 		}
 		#if DEBUG
-		print("sent introduction: \(introduction)")
 		#endif
 		try sendTransferSetupFrame(introduction)
 		

@@ -25,6 +25,8 @@ class NearbyConnection{
 	public let id:String
 	internal var lastError:Error?
 	private var connectionClosed:Bool=false
+	private var idleTimer:DispatchSourceTimer?
+	private var lastActivity=Date()
 	
 	// UKEY2-related state
 	internal var publicKey:ECPublicKey?
@@ -51,13 +53,21 @@ class NearbyConnection{
 	}
 	
 	func start(){
-		connection.stateUpdateHandler={state in
+        let timer=DispatchSource.makeTimerSource(queue:NearbyConnection.dispatchQueue)
+        idleTimer=timer
+        timer.schedule(deadline:.now()+15,repeating:15)
+        timer.setEventHandler { [weak self] in
+            guard let self=self, Date().timeIntervalSince(self.lastActivity)>90 else {return}
+            self.lastError=NearbyError.canceled(reason:.timedOut)
+            self.protocolError()
+        }
+        timer.resume()
+        connection.stateUpdateHandler={state in
 			if case .ready = state {
 				self.connectionReady()
 				self.receiveFrameAsync()
 			} else if case .failed(let err) = state {
 				self.lastError=err
-				print("Error opening socket: \(err)")
 				self.handleConnectionClosure()
 			}
 		}
@@ -68,7 +78,10 @@ class NearbyConnection{
 	func connectionReady(){}
 	
 	internal func handleConnectionClosure(){
-		print("Connection closed")
+		connectionClosed=true
+		idleTimer?.cancel();idleTimer=nil
+		connection.stateUpdateHandler=nil
+		connection.cancel()
 	}
 	
 	internal func protocolError(){
@@ -137,6 +150,7 @@ class NearbyConnection{
 				self.protocolError()
 				return
 			}
+			self.lastActivity=Date()
 			self.processReceivedFrame(frameData: content)
 			self.receiveFrameAsync()
 		}
@@ -146,6 +160,7 @@ class NearbyConnection{
 		if connectionClosed{
 			return
 		}
+		lastActivity=Date()
 		var lengthPrefixedData=Data(capacity: frame.count+4)
 		let length:Int=frame.count
 		lengthPrefixedData.append(contentsOf: [
@@ -235,8 +250,8 @@ class NearbyConnection{
 	
 	internal func decryptAndProcessReceivedSecureMessage(_ smsg:Securemessage_SecureMessage) throws{
 		guard smsg.hasSignature, smsg.hasHeaderAndBody else { throw NearbyError.requiredFieldMissing("secureMessage.signature|headerAndBody") }
-		let hmac=Data(HMAC<SHA256>.authenticationCode(for: smsg.headerAndBody, using: recvHmacKey!))
-		guard hmac==smsg.signature else { throw NearbyError.protocolError("hmac!=signature") }
+		guard let recvHmacKey=recvHmacKey else {throw NearbyError.protocolError("Missing receive key")}
+		guard HMAC<SHA256>.isValidAuthenticationCode(smsg.signature, authenticating:smsg.headerAndBody, using:recvHmacKey) else { throw NearbyError.protocolError("hmac!=signature") }
 		let headerAndBody=try Securemessage_HeaderAndBody(serializedData: smsg.headerAndBody)
 		guard headerAndBody.header.iv.count == 16, !headerAndBody.body.isEmpty, headerAndBody.body.count % 16 == 0 else {throw NearbyError.protocolError("Invalid cipher data")}
 		var decryptedData=Data(count: headerAndBody.body.count)
@@ -272,7 +287,7 @@ class NearbyConnection{
 			guard payloadTransfer.hasPayloadChunk, chunk.hasOffset, chunk.hasFlags else { throw NearbyError.requiredFieldMissing("payloadTransfer.payloadChunk|offset|flags") }
 			if case .bytes = header.type{
 				let payloadID=header.id
-				if header.totalSize<0 || header.totalSize>InboundNearbyConnection.SANE_FRAME_LENGTH || payloadBuffers.count > 32{
+				if header.totalSize<0 || header.totalSize>InboundNearbyConnection.SANE_FRAME_LENGTH || (payloadBuffers[payloadID] == nil && payloadBuffers.count >= 4){
 					payloadBuffers.removeValue(forKey: payloadID)
 					throw NearbyError.protocolError("Payload too large (\(header.totalSize) bytes)")
 				}
@@ -301,11 +316,9 @@ class NearbyConnection{
 			}
 		}else if offlineFrame.hasV1 && offlineFrame.v1.hasType, case .keepAlive = offlineFrame.v1.type{
 			#if DEBUG
-			print("Sent keep-alive")
 			#endif
 			sendKeepAlive(ack: true)
 		}else{
-			print("Unhandled offline frame encrypted: \(offlineFrame)")
 		}
 	}
 	
@@ -451,7 +464,6 @@ class NearbyConnection{
 				sendFrameAsync(try offlineFrame.serializedData())
 			}
 		}catch{
-			print("Error sending KEEP_ALIVE: \(error)")
 		}
 	}
 }

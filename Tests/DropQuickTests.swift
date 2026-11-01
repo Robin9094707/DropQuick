@@ -51,3 +51,61 @@ final class DropQuickTests:XCTestCase {
         XCTAssertEqual(BrowserPortal.escape("<script>\"&"),"&lt;script&gt;&quot;&amp;")
     }
 }
+
+// Runs the real encrypted protocol over loopback; does not claim stock-Android interop.
+final class EncryptedLoopbackTests:XCTestCase {
+    func testEncryptedMultiFileTransferIncludingEmptyFile() throws {
+        let done=expectation(description:"Sender and receiver complete")
+        done.expectedFulfillmentCount=3 // two received files plus sender completion
+        let folder=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
+        defer {try? FileManager.default.removeItem(at:folder)}
+        let content=Data((0..<700_000).map{UInt8(truncatingIfNeeded:$0)})
+        let first=folder.appendingPathComponent("Loopback.bin")
+        let empty=folder.appendingPathComponent("Empty.txt")
+        try content.write(to:first);try Data().write(to:empty)
+        let delegate=LoopbackDelegate(expectation:done,expected:["Loopback.bin":content,"Empty.txt":Data()])
+        let listener=try NWListener(using:.tcp)
+        listener.newConnectionHandler = {conn in
+            let receiver=InboundNearbyConnection(connection:conn,id:"test-incoming")
+            delegate.receiver=receiver;receiver.delegate=delegate;receiver.start()
+        }
+        listener.stateUpdateHandler = {state in
+            if case .ready=state, let port=listener.port {
+                let conn=NWConnection(host:"127.0.0.1",port:port,using:.tcp)
+                let sender=OutboundNearbyConnection(connection:conn,id:"test-outgoing",urlsToSend:[first,empty])
+                delegate.sender=sender;sender.delegate=delegate;sender.start()
+            }
+        }
+        listener.start(queue:.main)
+        wait(for:[done],timeout:30)
+        listener.cancel()
+        delegate.sender=nil;delegate.receiver=nil
+    }
+}
+
+import Network
+private final class LoopbackDelegate:InboundNearbyConnectionDelegate,OutboundNearbyConnectionDelegate {
+    let expectation:XCTestExpectation
+    let expected:[String:Data]
+    var sender:OutboundNearbyConnection?
+    var receiver:InboundNearbyConnection?
+    init(expectation:XCTestExpectation,expected:[String:Data]) {self.expectation=expectation;self.expected=expected}
+    func obtainUserConsent(for transfer:TransferMetadata,from device:RemoteDeviceInfo,connection:InboundNearbyConnection) {
+        XCTAssertEqual(connection.pinCode,sender?.pinCode)
+        XCTAssertEqual(transfer.files.count,2)
+        connection.submitUserConsent(accepted:true)
+    }
+    func receivedFile(url:URL,connection:InboundNearbyConnection) {
+        XCTAssertEqual(try? Data(contentsOf:url),expected[url.lastPathComponent])
+        try? FileManager.default.removeItem(at:url)
+        expectation.fulfill()
+    }
+    func incomingProgress(connection:InboundNearbyConnection,progress:Double) {}
+    func connectionWasTerminated(connection:InboundNearbyConnection,error:Error?) {XCTAssertNil(error)}
+    func outboundConnectionWasEstablished(connection:OutboundNearbyConnection) {}
+    func outboundConnectionTransferAccepted(connection:OutboundNearbyConnection) {}
+    func outboundConnection(connection:OutboundNearbyConnection,transferProgress:Double) {}
+    func outboundConnection(connection:OutboundNearbyConnection,failedWithError:Error) {XCTFail("Encrypted transfer failed: \(failedWithError)")}
+    func outboundConnectionTransferFinished(connection:OutboundNearbyConnection) {expectation.fulfill()}
+}

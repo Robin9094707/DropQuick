@@ -8,6 +8,7 @@ final class BrowserPortal {
     var onReceived:((URL)->Void)?
     var onDownloaded:((URL)->Void)?
     var onError:((String)->Void)?
+    var onStopped:(()->Void)?
     private var listener:NWListener?
     private var connections:[UUID:NWConnection]=[:]
     private var expiry:DispatchWorkItem?
@@ -41,6 +42,7 @@ final class BrowserPortal {
     func stop() {
         expiry?.cancel(); expiry=nil
         listener?.cancel(); listener=nil
+        onStopped?()
         queue.async { [weak self] in
             guard let self=self else {return}
             for conn in self.connections.values {conn.cancel()}

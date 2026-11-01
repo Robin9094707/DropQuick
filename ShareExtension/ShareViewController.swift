@@ -21,7 +21,17 @@ final class ShareViewController:UIViewController {
         var failures=0
         for provider in providers.prefix(50) {
             do {
-                if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) || provider.hasItemConformingToTypeIdentifier(UTType.data.identifier) {
+                if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+                    let value=try await provider.loadItem(forTypeIdentifier:UTType.fileURL.identifier)
+                    guard let url=value as? URL else {throw CocoaError(.fileReadUnknown)}
+                    paths.append(try StoragePaths.importFile(url).path)
+                } else if provider.hasItemConformingToTypeIdentifier(UTType.plainText.identifier) {
+                    let value=try await provider.loadItem(forTypeIdentifier:UTType.plainText.identifier)
+                    if let text=value as? String {paths.append(try storeText(text,name:"Nachricht.txt").path)}
+                } else if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
+                    let value=try await provider.loadItem(forTypeIdentifier:UTType.url.identifier)
+                    if let url=value as? URL {paths.append(try storeText(url.absoluteString,name:"Link.txt").path)}
+                } else if provider.hasItemConformingToTypeIdentifier(UTType.data.identifier) {
                     let type=provider.registeredTypeIdentifiers.first(where:{UTType($0)?.conforms(to:.data)==true}) ?? UTType.data.identifier
                     let url:URL=try await withCheckedThrowingContinuation {continuation in
                         provider.loadFileRepresentation(forTypeIdentifier:type) {url,error in
@@ -33,14 +43,6 @@ final class ShareViewController:UIViewController {
                         }
                     }
                     paths.append(url.path)
-                } else if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
-                    let value=try await provider.loadItem(forTypeIdentifier:UTType.url.identifier)
-                    if let url=value as? URL {
-                        let dest=try storeText(url.absoluteString,name:"Link.txt");paths.append(dest.path)
-                    }
-                } else if provider.hasItemConformingToTypeIdentifier(UTType.plainText.identifier) {
-                    let value=try await provider.loadItem(forTypeIdentifier:UTType.plainText.identifier)
-                    if let text=value as? String {paths.append(try storeText(text,name:"Nachricht.txt").path)}
                 }
             } catch {failures+=1}
         }

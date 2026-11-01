@@ -43,7 +43,6 @@ class InboundNearbyConnection: NearbyConnection{
 		do{
 			try deletePartiallyReceivedFiles()
 		}catch{
-			print("Error deleting partially received files: \(error)")
 		}
 		DispatchQueue.main.async {
 			self.delegate?.connectionWasTerminated(connection: self, error: self.lastError)
@@ -72,14 +71,12 @@ class InboundNearbyConnection: NearbyConnection{
 			}
 		}catch{
 			lastError=error
-			print("Deserialization error: \(error) in state \(currentState)")
 protocolError()
 		}
 	}
 	
 	override internal func processTransferSetupFrame(_ frame:Sharing_Nearby_Frame) throws{
 		if frame.hasV1 && frame.v1.hasType, case .cancel = frame.v1.type {
-			print("Transfer canceled")
 			try sendDisconnectionAndDisconnect()
 			return
 		}
@@ -90,9 +87,7 @@ protocolError()
 			try processPairedKeyResultFrame(frame)
 		case .receivedPairedKeyResult:
 			try processIntroductionFrame(frame)
-		default:
-			print("Unexpected connection state in processTransferSetupFrame: \(currentState)")
-			print(frame)
+		default: break
 		}
 	}
 	
@@ -112,8 +107,9 @@ protocolError()
 			transferredFiles[id]!.bytesTransferred+=Int64(frame.payloadChunk.body.count)
 			
 			delegate?.incomingProgress(connection:self, progress:Double(transferredFiles[id]!.bytesTransferred)/Double(max(1,fileInfo.meta.size)))
-		}else if (frame.payloadChunk.flags & 1)==1{
-			guard currentOffset == fileInfo.meta.size else {throw NearbyError.protocolError("Incomplete file")}
+		}
+        if (frame.payloadChunk.flags & 1)==1{
+			guard transferredFiles[id]!.bytesTransferred == fileInfo.meta.size else {throw NearbyError.protocolError("Incomplete file")}
 			try fileInfo.fileHandle?.close()
 			delegate?.receivedFile(url:fileInfo.destinationURL, connection:self)
 			transferredFiles[id]!.fileHandle=nil
@@ -268,7 +264,6 @@ protocolError()
 			try sendTransferSetupFrame(pairedEncryption)
 			currentState = .sentConnectionResponse
 		} else {
-			print("Unhandled offline frame plaintext: \(frame)")
 		}
 	}
 	
@@ -406,7 +401,6 @@ protocolError()
 			try sendTransferSetupFrame(frame)
 			try sendDisconnectionAndDisconnect()
 		}catch{
-			print("Error \(error)")
 			protocolError()
 		}
 	}

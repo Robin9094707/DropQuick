@@ -37,7 +37,7 @@ final class TransferCenter:NSObject,ObservableObject,MainAppDelegate,ShareExtens
         started=true
         manager.mainAppDelegate=self
         manager.addShareExtensionDelegate(self)
-        manager.statusHandler = { [weak self] message in DispatchQueue.main.async {self?.error=message}}
+        manager.statusHandler = { [weak self] message in DispatchQueue.main.async {self?.error=message;self?.hide()}}
         manager.startDeviceDiscovery()
         monitor.pathUpdateHandler = { [weak self] path in
             DispatchQueue.main.async {self?.networkAvailable=path.status == .satisfied && (path.usesInterfaceType(.wifi) || path.usesInterfaceType(.wiredEthernet))}
@@ -53,12 +53,14 @@ final class TransferCenter:NSObject,ObservableObject,MainAppDelegate,ShareExtens
                 self?.record(TransferRecord(direction:"Gesendet",peer:"Browser",names:[url.lastPathComponent],paths:[url.path],state:"Übertragen",detail:"Vom Browser angefordert; Speichern am Empfänger nicht überprüfbar."))
             }
         }
+        portal.onStopped = { [weak self] in DispatchQueue.main.async {self?.portalURL=nil}}
         portal.onError = { [weak self] message in DispatchQueue.main.async {self?.error=message}}
         importStaged()
     }
-    func activate() {start(); importStaged()}
+    func activate() {if !busy {history=HistoryStore.read()}; start(); importStaged()}
     func background() {
         hide()
+        manager.cancelIncomingTransfers()
         stopPortal()
         if busy {cancel()}
         if let offer=offer {respond(to:offer,accept:false)}
@@ -127,7 +129,7 @@ final class TransferCenter:NSObject,ObservableObject,MainAppDelegate,ShareExtens
         if let id=activeDevice {manager.cancelOutgoingTransfer(id:id)}
         finishOutgoing(state:"Abgebrochen",detail:nil)
     }
-    func record(_ value:TransferRecord) {history.insert(value,at:0); saveHistory()}
+    func record(_ value:TransferRecord) {history.insert(value,at:0); history=Array(history.prefix(500)); saveHistory()}
     func saveHistory() {do {try HistoryStore.save(history)} catch {self.error=error.localizedDescription}}
     private func updateRecord(_ id:UUID?,state:String,detail:String?=nil) {
         if let i=history.firstIndex(where:{$0.id==id}) {history[i].state=state; history[i].detail=detail; saveHistory()}

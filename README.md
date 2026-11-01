@@ -42,7 +42,7 @@ open DropQuick.xcodeproj
 
 Choose your signing team for both app and extension and enable App Groups. The identifier is `group.eu.simplexsmp.dropquick`; adjust both targets and `StoragePaths.groupID` together if your team uses another group. The generated project is intentionally not checked in; `project.yml` is the source of truth.
 
-CI runs XCTest mini tests for endpoint metadata, malformed packets, path traversal, HKDF RFC5869, PINs, history and HTML escaping, then makes a Release device build. These tests **do not prove Android/Windows interoperability**. See [device test checklist](docs/DEVICE_TESTS.md).
+CI runs XCTest mini tests for endpoint metadata, malformed packets, path traversal, HKDF RFC5869, PINs, history, HTML escaping and a complete encrypted loopback transfer (including an empty file), then makes a Release device build. These tests **do not prove Android/Windows interoperability**. See [device test checklist](docs/DEVICE_TESTS.md).
 
 ## Data
 
