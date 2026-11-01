@@ -346,7 +346,7 @@ public class NearbyConnectionManager : NSObject, NetServiceDelegate, InboundNear
 	}
 	
 	public func cancelOutgoingTransfer(id:String){
-		guard let transfer=outgoingTransfers[id] else {return}
+		guard let transfer=outgoingTransfers.removeValue(forKey:id) else {return}
 		NearbyConnection.dispatchQueue.async {transfer.connection.cancel()}
 	}
 	
@@ -472,41 +472,28 @@ public class NearbyConnectionManager : NSObject, NetServiceDelegate, InboundNear
 		conn.start()
 	}
 	
-	func outboundConnectionWasEstablished(connection: OutboundNearbyConnection) {
-		guard let transfer=outgoingTransfers[connection.id] else {return}
-		DispatchQueue.main.async {
-			transfer.delegate.connectionWasEstablished(pinCode: connection.pinCode!)
-		}
-	}
-	
-	func outboundConnectionTransferAccepted(connection: OutboundNearbyConnection) {
-		guard let transfer=outgoingTransfers[connection.id] else {return}
-		DispatchQueue.main.async {
-			transfer.delegate.transferAccepted()
-		}
-	}
-	
-	func outboundConnection(connection: OutboundNearbyConnection, transferProgress: Double) {
-		guard let transfer=outgoingTransfers[connection.id] else {return}
-		DispatchQueue.main.async {
-			transfer.delegate.transferProgress(progress: transferProgress)
-		}
-	}
-	
-	func outboundConnection(connection: OutboundNearbyConnection, failedWithError: Error) {
-		guard let transfer=outgoingTransfers[connection.id] else {return}
-		DispatchQueue.main.async {
-			transfer.delegate.connectionFailed(with: failedWithError)
-		}
-		outgoingTransfers.removeValue(forKey: connection.id)
-	}
-	
-	func outboundConnectionTransferFinished(connection: OutboundNearbyConnection) {
-		guard let transfer=outgoingTransfers[connection.id] else {return}
-		DispatchQueue.main.async {
-			transfer.delegate.transferFinished()
-		}
-		outgoingTransfers.removeValue(forKey: connection.id)
-	}
+    func outboundConnectionWasEstablished(connection:OutboundNearbyConnection) {
+        DispatchQueue.main.async {
+            guard let transfer=self.outgoingTransfers[connection.id] else {return}
+            transfer.delegate.connectionWasEstablished(pinCode:connection.pinCode ?? "----")
+        }
+    }
+    func outboundConnectionTransferAccepted(connection:OutboundNearbyConnection) {
+        DispatchQueue.main.async {self.outgoingTransfers[connection.id]?.delegate.transferAccepted()}
+    }
+    func outboundConnection(connection:OutboundNearbyConnection,transferProgress:Double) {
+        DispatchQueue.main.async {self.outgoingTransfers[connection.id]?.delegate.transferProgress(progress:transferProgress)}
+    }
+    func outboundConnection(connection:OutboundNearbyConnection,failedWithError:Error) {
+        DispatchQueue.main.async {
+            guard let transfer=self.outgoingTransfers.removeValue(forKey:connection.id) else {return}
+            transfer.delegate.connectionFailed(with:failedWithError)
+        }
+    }
+    func outboundConnectionTransferFinished(connection:OutboundNearbyConnection) {
+        DispatchQueue.main.async {
+            guard let transfer=self.outgoingTransfers.removeValue(forKey:connection.id) else {return}
+            transfer.delegate.transferFinished()
+        }
+    }
 }
-

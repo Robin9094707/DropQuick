@@ -87,7 +87,7 @@ private final class ImportState:NSObject,ObservableObject,ShareExtensionDelegate
         discovering=true;manager.addShareExtensionDelegate(self);manager.startDeviceDiscovery()
     }
     func stop() {
-        if busy, let target=target {manager.cancelOutgoingTransfer(id:target)}
+        if busy, let target=target {manager.cancelOutgoingTransfer(id:target);finish("Abgebrochen")}
         if discovering {manager.stopDeviceDiscovery();manager.removeShareExtensionDelegate(self);discovering=false}
         timeout?.invalidate();manager.clearQrCodeKey()
     }
