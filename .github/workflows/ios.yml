@@ -16,10 +16,12 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
-      - name: Select Xcode 26
+      - name: Use runner default Xcode and installed platforms
         run: |
-          sudo xcode-select -s /Applications/Xcode_26.0.app/Contents/Developer || sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          xcode-select -p
           xcodebuild -version
+          xcodebuild -showsdks
+          xcrun simctl list runtimes
       - name: Generate Xcode project
         run: |
           brew install xcodegen
@@ -29,7 +31,14 @@ jobs:
       - name: Simulator mini tests
         run: |
           DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for a in d["devices"].values() for x in a if "iPhone" in x["name"]))')
-          xcodebuild test -project DropQuick.xcodeproj -scheme DropQuick -destination "platform=iOS Simulator,id=$DEVICE_ID" -resultBundlePath build/Tests.xcresult CODE_SIGNING_ALLOWED=NO
+          xcodebuild test -project DropQuick.xcodeproj -scheme DropQuick -destination "platform=iOS Simulator,id=$DEVICE_ID" -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult CODE_SIGNING_ALLOWED=NO
+          xcrun simctl launch "$DEVICE_ID" eu.simplexsmp.dropquick
+          sleep 3
+          xcrun simctl io "$DEVICE_ID" screenshot build/DropQuick-iPhone.png
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DropQuick-iPhone-preview
+          path: build/DropQuick-iPhone.png
       - name: Build device application
         run: |
           xcodebuild -project DropQuick.xcodeproj -scheme DropQuick -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build/device CODE_SIGNING_ALLOWED=NO build
@@ -49,7 +58,10 @@ jobs:
           name: mini-test-results
           path: build/Tests.xcresult
       - name: Publish tagged release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" build/DropQuick-1.0.0-unsigned.ipa --title "DropQuick $GITHUB_REF_NAME" --notes-file docs/RELEASE.md
+        run: |
+          RELEASE_TAG="${GITHUB_REF_NAME}"
+          if [ "$GITHUB_REF_TYPE" != "tag" ]; then RELEASE_TAG="v1.0.0-build.${GITHUB_RUN_NUMBER}"; fi
+          gh release create "$RELEASE_TAG" build/DropQuick-1.0.0-unsigned.ipa build/DropQuick-iPhone.png --target "$GITHUB_SHA" --title "DropQuick 1.0.0 (build ${GITHUB_RUN_NUMBER})" --prerelease --notes-file docs/RELEASE.md

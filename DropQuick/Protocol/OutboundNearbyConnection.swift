@@ -128,7 +128,7 @@ class OutboundNearbyConnection:NearbyConnection{
 		case .sendingFiles:
 			break
 		default:
-			assertionFailure("Unexpected state \(currentState)")
+			throw NearbyError.protocolError("Unexpected transfer state")
 		}
 	}
 	
@@ -351,89 +351,53 @@ class OutboundNearbyConnection:NearbyConnection{
 		try sendDisconnectionAndDisconnect()
 	}
 	
-	private func sendNextFileChunk() throws{
-		if cancelled{
-			return
-		}
-		if currentTransfer==nil || currentTransfer?.currentOffset==currentTransfer?.totalBytes{
-			if currentTransfer != nil && currentTransfer?.handle != nil{
-				try currentTransfer?.handle?.close()
-			}
-			if queue.isEmpty{
-				#if DEBUG
-				print("Disconnecting because all files have been transferred")
-				#endif
-				try sendDisconnectionAndDisconnect()
-				cancelled=true
-		delegate?.outboundConnectionTransferFinished(connection: self)
-				return
-			}
-			currentTransfer=queue.removeFirst()
-		}
-		
-		let fileBuffer:Data
-		if #available(macOS 10.15.4, *) {
-			guard let _fileBuffer=try currentTransfer!.handle!.read(upToCount: 512*1024) else{
-				throw NearbyError.inputOutput
-			}
-			fileBuffer=_fileBuffer
-		} else {
-			fileBuffer=currentTransfer!.handle!.readData(ofLength: 512*1024)
-		}
-		
-		var transfer=Location_Nearby_Connections_PayloadTransferFrame()
-		transfer.packetType = .data
-		transfer.payloadChunk.offset=currentTransfer!.currentOffset
-		transfer.payloadChunk.flags=0
-		transfer.payloadChunk.body=fileBuffer
-		transfer.payloadHeader.id=currentTransfer!.payloadID
-		transfer.payloadHeader.type = .file
-		transfer.payloadHeader.totalSize=Int64(currentTransfer!.totalBytes)
-		transfer.payloadHeader.isSensitive=false
-		currentTransfer!.currentOffset+=Int64(fileBuffer.count)
-		
-		var wrapper=Location_Nearby_Connections_OfflineFrame()
-		wrapper.version = .v1
-		wrapper.v1=Location_Nearby_Connections_V1Frame()
-		wrapper.v1.type = .payloadTransfer
-		wrapper.v1.payloadTransfer=transfer
-		try encryptAndSendOfflineFrame(wrapper, completion: {
-			do{
-				try self.sendNextFileChunk()
-			}catch{
-				self.lastError=error
-				self.protocolError()
-			}
-		})
-		#if DEBUG
-		print("sent file chunk, current transfer: \(String(describing: currentTransfer))")
-		#endif
-		totalBytesSent+=Int64(fileBuffer.count)
-		delegate?.outboundConnection(connection: self, transferProgress: Double(totalBytesSent)/Double(totalBytesToSend))
-		
-		if currentTransfer!.currentOffset==currentTransfer!.totalBytes{
-			// Signal end of file (yes, all this for one bit)
-			var transfer=Location_Nearby_Connections_PayloadTransferFrame()
-			transfer.packetType = .data
-			transfer.payloadChunk.offset=currentTransfer!.currentOffset
-			transfer.payloadChunk.flags=1 // <- this one here
-			transfer.payloadHeader.id=currentTransfer!.payloadID
-			transfer.payloadHeader.type = .file
-			transfer.payloadHeader.totalSize=Int64(currentTransfer!.totalBytes)
-			transfer.payloadHeader.isSensitive=false
-			
-			var wrapper=Location_Nearby_Connections_OfflineFrame()
-			wrapper.version = .v1
-			wrapper.v1=Location_Nearby_Connections_V1Frame()
-			wrapper.v1.type = .payloadTransfer
-			wrapper.v1.payloadTransfer=transfer
-			try encryptAndSendOfflineFrame(wrapper)
-			#if DEBUG
-			print("sent EOF, current transfer: \(String(describing: currentTransfer))")
-			#endif
-		}
-	}
-	
+    private func sendNextFileChunk() throws {
+        guard !cancelled else {return}
+        if currentTransfer == nil {
+            guard !queue.isEmpty else {
+                cancelled=true
+                try sendDisconnectionAndDisconnect()
+                delegate?.outboundConnectionTransferFinished(connection:self)
+                return
+            }
+            currentTransfer=queue.removeFirst()
+        }
+        guard let current=currentTransfer else {return}
+        var frame=Location_Nearby_Connections_OfflineFrame()
+        frame.version = .v1
+        frame.v1.type = .payloadTransfer
+        var payload=Location_Nearby_Connections_PayloadTransferFrame()
+        payload.packetType = .data
+        payload.payloadHeader.id=current.payloadID
+        payload.payloadHeader.type = .file
+        payload.payloadHeader.totalSize=current.totalBytes
+        payload.payloadHeader.isSensitive=false
+        payload.payloadChunk.offset=current.currentOffset
+        if current.currentOffset == current.totalBytes {
+            payload.payloadChunk.flags=1
+            frame.v1.payloadTransfer=payload
+            try encryptAndSendOfflineFrame(frame,completion:{ [weak self] in
+                guard let self=self else {return}
+                try? self.currentTransfer?.handle?.close()
+                self.currentTransfer=nil
+                self.continueTransfer()
+            })
+        } else {
+            guard let data=try current.handle?.read(upToCount:512*1024), !data.isEmpty,
+                  current.currentOffset+Int64(data.count)<=current.totalBytes else {throw NearbyError.inputOutput}
+            payload.payloadChunk.flags=0
+            payload.payloadChunk.body=data
+            frame.v1.payloadTransfer=payload
+            currentTransfer!.currentOffset+=Int64(data.count)
+            totalBytesSent+=Int64(data.count)
+            try encryptAndSendOfflineFrame(frame,completion:{ [weak self] in self?.continueTransfer() })
+            delegate?.outboundConnection(connection:self,transferProgress:Double(totalBytesSent)/Double(max(1,totalBytesToSend)))
+        }
+    }
+    private func continueTransfer() {
+        do {try sendNextFileChunk()} catch {lastError=error;protocolError()}
+    }
+
 	private static func sanitizeFileName(name:String)->String{
 		return name.replacingOccurrences(of: "[\\/\\\\?%\\*:\\|\"<>=]", with: "_", options: .regularExpression)
 	}

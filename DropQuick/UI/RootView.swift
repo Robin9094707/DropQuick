@@ -259,7 +259,7 @@ struct SettingsView:View {
             Section("Datenschutz & Grenzen") {
                 Text("Kein Konto, keine Cloud, keine Analyse. Verlauf und Dateikopien bleiben auf diesem iPhone. Verlaufseinträge löschen entfernt nur den Eintrag. Dateien im App-Gruppencontainer werden bei Deinstallation entfernt.")
                 Text("Quick Share basiert auf einem inoffiziellen offenen Protokoll. Die Kompatibilität mit deinem Samsung/Android-Gerät muss praktisch getestet werden. Kein Bluetooth-Dateitransport, keine Wi-Fi-Direct-Verbindung, keine native Windows-Umgebungsfreigabe. App für Empfang und Übertragung geöffnet lassen.")
-                Text("Die Teilen-Erweiterung legt Dateien in der Ausgangsbox ab. Öffne danach DropQuick, um den Empfänger auszuwählen. Bei Sideloading müssen App und Erweiterung dieselbe App Group behalten.")
+                Text("Die Teilen-Erweiterung kann direkt an Quick-Share-Geräte senden und legt die Dateien zusätzlich in der Ausgangsbox ab. Bei Sideloading müssen App und Erweiterung dieselbe App Group behalten.")
             }
             Section("Open Source") {
                 Link("DropQuick auf GitHub",destination:URL(string:"https://github.com/Robin9094707/DropQuick")!)

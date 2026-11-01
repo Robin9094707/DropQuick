@@ -58,11 +58,13 @@ targets:
   DropQuickShare:
     type: app-extension
     platform: iOS
-    sources: [ShareExtension, Shared]
+    sources: [ShareExtension, Shared, DropQuick/Protocol]
     info:
       path: Config/Share-Info.plist
       properties:
         CFBundleDisplayName: DropQuick
+        NSLocalNetworkUsageDescription: DropQuick findet Quick-Share-Geräte im lokalen Netzwerk.
+        NSBonjourServices: ['_FC9F5ED42C8A._tcp.']
         NSExtension:
           NSExtensionPointIdentifier: com.apple.share-services
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
@@ -82,6 +84,10 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: eu.simplexsmp.dropquick.share
         APPLICATION_EXTENSION_API_ONLY: true
         SKIP_INSTALL: true
+    dependencies:
+      - package: SwiftProtobuf
+      - package: SwiftECC
+      - package: BigInt
   DropQuickTests:
     type: bundle.unit-test
     platform: iOS

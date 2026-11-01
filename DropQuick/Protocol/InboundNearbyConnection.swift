@@ -108,16 +108,16 @@ protocolError()
 		guard frame.payloadChunk.offset==currentOffset else { throw NearbyError.protocolError("Invalid offset into file \(frame.payloadChunk.offset), expected \(currentOffset)") }
 		guard currentOffset+Int64(frame.payloadChunk.body.count)<=fileInfo.meta.size else { throw NearbyError.protocolError("Transferred file size exceeds previously specified value") }
 		if frame.payloadChunk.body.count>0{
-			fileInfo.fileHandle?.write(frame.payloadChunk.body)
+			try fileInfo.fileHandle?.write(contentsOf:frame.payloadChunk.body)
 			transferredFiles[id]!.bytesTransferred+=Int64(frame.payloadChunk.body.count)
-			fileInfo.progress?.completedUnitCount=transferredFiles[id]!.bytesTransferred
+			
 			delegate?.incomingProgress(connection:self, progress:Double(transferredFiles[id]!.bytesTransferred)/Double(max(1,fileInfo.meta.size)))
 		}else if (frame.payloadChunk.flags & 1)==1{
 			guard currentOffset == fileInfo.meta.size else {throw NearbyError.protocolError("Incomplete file")}
 			try fileInfo.fileHandle?.close()
 			delegate?.receivedFile(url:fileInfo.destinationURL, connection:self)
 			transferredFiles[id]!.fileHandle=nil
-			fileInfo.progress?.unpublish()
+			
 			transferredFiles.removeValue(forKey: id)
 			if transferredFiles.isEmpty{
 				completed=true
@@ -155,7 +155,7 @@ protocolError()
 		let deviceNameLength=Int(endpointInfo[17])
 		guard endpointInfo.count>=deviceNameLength+18 else { throw NearbyError.protocolError("Endpoint info too short to contain the device name") }
 		guard let deviceName=String(data: endpointInfo[18..<(18+deviceNameLength)], encoding: .utf8) else { throw NearbyError.protocolError("Device name is not valid UTF-8") }
-		let rawDeviceType:Int=Int(endpointInfo[0] & 7) >> 1
+		let rawDeviceType:Int=Int(endpointInfo[0] & 0x0e) >> 1
 		remoteDeviceInfo=RemoteDeviceInfo(name: deviceName, type: RemoteDeviceInfo.DeviceType.fromRawValue(value: rawDeviceType))
 		currentState = .receivedConnectionRequest
 	}
@@ -379,15 +379,9 @@ protocolError()
 		do{
 			accepted=true
 			for (id, file) in transferredFiles{
-				FileManager.default.createFile(atPath: file.destinationURL.path, contents: nil)
+				guard FileManager.default.createFile(atPath:file.destinationURL.path,contents:nil) else {throw NearbyError.inputOutput}
 				let handle=try FileHandle(forWritingTo: file.destinationURL)
 				transferredFiles[id]!.fileHandle=handle
-				let progress=Progress()
-				progress.fileURL=file.destinationURL
-				progress.totalUnitCount=file.meta.size
-				progress.kind = .file
-				progress.isPausable=false
-				transferredFiles[id]!.progress=progress
 				transferredFiles[id]!.created=true
 			}
 			
@@ -420,6 +414,7 @@ protocolError()
 	private func deletePartiallyReceivedFiles() throws{
 		for (_, file) in transferredFiles{
 			guard file.created else { continue }
+			try? file.fileHandle?.close()
 			try FileManager.default.removeItem(at: file.destinationURL)
 		}
 	}

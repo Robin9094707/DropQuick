@@ -110,7 +110,8 @@ class NearbyConnection{
 				return
 			}
 			guard let content=content, content.count == 4 else {
-				assertionFailure()
+				self.lastError=NearbyError.inputOutput
+				self.protocolError()
 				return
 			}
 			let frameLength:UInt32=UInt32(content[0]) << 24 | UInt32(content[1]) << 16 | UInt32(content[2]) << 8 | UInt32(content[3])

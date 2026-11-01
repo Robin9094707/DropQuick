@@ -7,6 +7,7 @@
 
 import Foundation
 import CoreFoundation
+import Security
 
 extension Data{
 	func urlSafeBase64EncodedString() -> String {

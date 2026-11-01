@@ -8,7 +8,7 @@ Native SwiftUI / iOS 26+ app with real Liquid Glass controls. Share files with A
 - Everyone visibility for ten minutes; advertisement stops when the app enters background. App must stay open for transfers.
 - Android QR activation using `https://quickshare.google/qrcode#key=…` when ordinary discovery doesn't find a receiver. On Android also open Quick Share → Receive and set Everyone visibility. Same LAN is required.
 - Native files picker, streaming photo/video import, text notes, previews, system share/AirDrop sheet, local transfer history with retained file copies.
-- A real iOS Share Extension: copies attachments to a shared outbox. Then open DropQuick and select a receiver. It does not use private extension-to-app launch tricks.
+- A real iOS Share Extension: copies attachments, discovers Quick Share receivers and sends directly inside the share sheet, including PIN and QR activation. Files are also staged in the shared outbox for the main app. No private extension-to-app launch tricks.
 - Explicit, ten-minute browser fallback for Windows/Android without installing anything: download selected files or upload files up to 50 MB each. This is local **HTTP, not encrypted**. Use only on a trusted LAN. The random link authorizes access; anyone with it can download/upload. Imported uploads are never executed or opened automatically.
 
 ## Compatibility — read before installing
@@ -28,7 +28,7 @@ Guest Wi-Fi client isolation, VPNs, firewalls and Android firmware can affect di
 
 [GitHub Actions](https://github.com/Robin9094707/DropQuick/actions/workflows/ios.yml) builds and tests the app on macOS/Xcode 26 and uploads `DropQuick-1.0.0-unsigned-IPA`. Open a successful run → Artifacts. Version tags also attach the IPA to a GitHub Release.
 
-The IPA is **unsigned**, for re-signing/sideloading, not direct installation by tapping it. A device-valid signature/provisioning profile is required. Preserve the Share Extension and assign the **same App Group entitlement** to both targets; otherwise share-extension imports cannot reach the main app. App Groups require appropriate Apple provisioning. In-app file/photo selection still works if the re-signer cannot provision App Groups. No Apple certificate or account credentials are included in the repository.
+The IPA is **unsigned**, for re-signing/sideloading, not direct installation by tapping it. A device-valid signature/provisioning profile is required. Preserve the Share Extension and assign the **same App Group entitlement** to both targets; otherwise share-extension imports/history cannot reach the main app; direct sending from the extension still works. App Groups require appropriate Apple provisioning. In-app file/photo selection still works if the re-signer cannot provision App Groups. No Apple certificate or account credentials are included in the repository.
 
 ## Build locally
 
