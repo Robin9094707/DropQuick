@@ -1,0 +1,55 @@
+name: Build iOS IPA
+on:
+  push:
+    branches: [main, 'codex/**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 26
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.0.app/Contents/Developer || sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          xcodebuild -version
+      - name: Generate Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+      - name: Resolve dependencies
+        run: xcodebuild -resolvePackageDependencies -project DropQuick.xcodeproj -scheme DropQuick
+      - name: Simulator mini tests
+        run: |
+          DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for a in d["devices"].values() for x in a if "iPhone" in x["name"]))')
+          xcodebuild test -project DropQuick.xcodeproj -scheme DropQuick -destination "platform=iOS Simulator,id=$DEVICE_ID" -resultBundlePath build/Tests.xcresult CODE_SIGNING_ALLOWED=NO
+      - name: Build device application
+        run: |
+          xcodebuild -project DropQuick.xcodeproj -scheme DropQuick -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build/device CODE_SIGNING_ALLOWED=NO build
+      - name: Package unsigned IPA for sideload signing
+        run: |
+          mkdir -p build/package/Payload
+          cp -R build/device/Build/Products/Release-iphoneos/DropQuick.app build/package/Payload/
+          cd build/package
+          zip -qr ../DropQuick-1.0.0-unsigned.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DropQuick-1.0.0-unsigned-IPA
+          path: build/DropQuick-1.0.0-unsigned.ipa
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mini-test-results
+          path: build/Tests.xcresult
+      - name: Publish tagged release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" build/DropQuick-1.0.0-unsigned.ipa --title "DropQuick $GITHUB_REF_NAME" --notes-file docs/RELEASE.md
